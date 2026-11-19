@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Garden</title>
+<script src="webxdc.js"></script>
+<style>
+  :root { --bg: #14201a; --panel: #1e2d25; --ink: #e9f2e4; --dim: #9fb3a3; --sun: #ffd166; --vine: #4f7a5c; --lit: #ffe08a; --bloom: #ff8fb1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(ellipse at 30% 0%, #23402f, var(--bg) 70%); color: var(--ink); font: 15px/1.45 Georgia, serif; min-height: 100vh; }
+  main { max-width: 760px; margin: 0 auto; padding: 14px 16px 30px; }
+  h1 { margin: 0; font-size: 26px; }
+  .sub { color: var(--dim); font-style: italic; margin: 2px 0 10px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .chip { background: var(--panel); border-radius: 999px; padding: 4px 12px; }
+  button { font: inherit; background: #2b4335; color: var(--ink); border: 1px solid #456b54; border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  svg { width: 100%; height: auto; background: rgba(0,0,0,.18); border-radius: 14px; display: block; }
+  .panel { background: var(--panel); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+  #state div, #log div { padding: 1px 0; }
+  #log { max-height: 160px; overflow-y: auto; font-size: 14px; color: var(--dim); }
+  .won { color: var(--bloom); font-weight: bold; }
+  .legend { font-size: 13px; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Logic Garden</h1>
+  <div class="sub">A garden of patterns, designed by Jade. Wake the suns so the right flowers bloom.</div>
+  <div class="bar">
+    <span class="chip" id="levelChip"></span>
+    <button id="prevBtn">◀ Previous bed</button>
+    <button id="nextBtn">Next bed ▶</button>
+    <button id="resetBtn">Put the suns to sleep</button>
+  </div>
+  <div class="panel" id="story"></div>
+  <svg id="garden" viewBox="0 0 700 360" role="img" aria-label="the garden"></svg>
+  <div class="panel" id="state"></div>
+  <div class="panel legend">
+    Click a sun to wake it or put it to sleep (everyone in the chat shares the same garden). Light runs along the vines.
+    🌗 <b>AND</b> blooms when all its vines carry light · 🌼 <b>OR</b> when any does · 🌑 <b>NOT</b> when its vine is dark ·
+    🌀 <b>TWIN</b> when exactly one of its two vines is lit · A flower in bloom shines light onward along its own vines.
+  </div>
+  <div class="panel"><div id="log"></div></div>
+</main>
+<script>
+"use strict";
+// Each bed: suns (s1…) and plants (p1…) in order; a plant's inputs are suns or earlier plants. goal: true = must bloom,
+// false = must stay closed. x/y place them in the 700×360 picture.
+const LEVELS = [
+  { name: "The first patch", story: "Jade's first puzzle: two suns, three plants. Make the AND and the OR bloom, and keep the NOT closed.",
+    suns: [{ id: "s1", x: 90, y: 110 }, { id: "s2", x: 90, y: 250 }],
+    plants: [{ id: "p1", kind: "AND", in: ["s1", "s2"], x: 400, y: 70, goal: true },
+             { id: "p2", kind: "OR", in: ["s1", "s2"], x: 400, y: 180, goal: true },
+             { id: "p3", kind: "NOT", in: ["s1"], x: 400, y: 290, goal: false }] },
+  { name: "Three suns", story: "The AND, the NOT and the OR must all bloom together. Which sun has to sleep?",
+    suns: [{ id: "s1", x: 90, y: 70 }, { id: "s2", x: 90, y: 180 }, { id: "s3", x: 90, y: 290 }],
+    plants: [{ id: "p1", kind: "AND", in: ["s1", "s2"], x: 400, y: 70, goal: true },
+             { id: "p2", kind: "NOT", in: ["s3"], x: 400, y: 180, goal: true },
+             { id: "p3", kind: "OR", in: ["s2", "s3"], x: 400, y: 290, goal: true }] },
+  { name: "A vine that remembers", story: "Now flowers feed flowers. Make the rose at the end bloom, but the thistle must stay closed.",
+    suns: [{ id: "s1", x: 70, y: 80 }, { id: "s2", x: 70, y: 180 }, { id: "s3", x: 70, y: 280 }],
+    plants: [{ id: "p1", kind: "OR", in: ["s1", "s2"], x: 270, y: 110 },
+             { id: "p2", kind: "NOT", in: ["s3"], x: 270, y: 270 },
+             { id: "p3", kind: "AND", in: ["p1", "p2"], x: 470, y: 180, goal: true, label: "rose" },
+             { id: "p4", kind: "AND", in: ["s1", "s3"], x: 470, y: 320, goal: false, label: "thistle" }] },
+  { name: "The twin vine", story: "A TWIN blooms when exactly one of its vines is lit. Make both lilies bloom while the moonflower sleeps.",
+    suns: [{ id: "s1", x: 70, y: 70 }, { id: "s2", x: 70, y: 180 }, { id: "s3", x: 70, y: 290 }],
+    plants: [{ id: "p1", kind: "TWIN", in: ["s1", "s2"], x: 280, y: 110, goal: true, label: "lily" },
+             { id: "p2", kind: "TWIN", in: ["s2", "s3"], x: 280, y: 260, goal: true, label: "lily" },
+             { id: "p3", kind: "AND", in: ["p1", "p2"], x: 470, y: 120 },
+             { id: "p4", kind: "AND", in: ["p3", "s2"], x: 620, y: 200, goal: false, label: "moonflower" }] },
+  { name: "Labyrinth bed", story: "Four suns, a knot of vines. Exactly the star-bloom and the bell must open; the two shadows stay shut.",
+    suns: [{ id: "s1", x: 60, y: 50 }, { id: "s2", x: 60, y: 140 }, { id: "s3", x: 60, y: 230 }, { id: "s4", x: 60, y: 320 }],
+    plants: [{ id: "p1", kind: "TWIN", in: ["s1", "s2"], x: 220, y: 90 },
+             { id: "p2", kind: "OR", in: ["s3", "s4"], x: 220, y: 270 },
+             { id: "p3", kind: "NOT", in: ["s2"], x: 220, y: 180 },
+             { id: "p4", kind: "AND", in: ["p1", "p2"], x: 420, y: 120, goal: true, label: "star-bloom" },
+             { id: "p5", kind: "AND", in: ["p3", "s4"], x: 420, y: 250, goal: false, label: "shadow" },
+             { id: "p6", kind: "TWIN", in: ["p4", "p5"], x: 610, y: 110, goal: true, label: "bell" },
+             { id: "p7", kind: "AND", in: ["s1", "s3"], x: 610, y: 280, goal: false, label: "shadow" }] },
+  { name: "The Eclipse Garden", by: "Dee", story: "Designed by Dee. The eclipse must not form, yet the dayflower must open. Crescent and Murkshade must bloom too. Sneaky: one shade has to be allowed to close.",
+    suns: [{ id: "s1", x: 60, y: 50, label: "Dawn" }, { id: "s2", x: 60, y: 140, label: "Dusk" }, { id: "s3", x: 60, y: 230, label: "Gloam" }, { id: "s4", x: 60, y: 320, label: "Murk" }],
+    plants: [{ id: "p1", kind: "TWIN", in: ["s1", "s2"], x: 250, y: 80, goal: true, label: "Crescent" },
+             { id: "p2", kind: "NOT", in: ["s3"], x: 250, y: 190, label: "Gloamshade" },
+             { id: "p3", kind: "NOT", in: ["s4"], x: 250, y: 300, goal: true, label: "Murkshade" },
+             { id: "p4", kind: "AND", in: ["p1", "p2", "p3"], x: 470, y: 190, goal: false, label: "Eclipse" },
+             { id: "p5", kind: "OR", in: ["s1", "s3"], x: 630, y: 90, goal: true, label: "Dayflower" }] },
+];
+const EM = { AND: "🌗", OR: "🌼", NOT: "🌑", TWIN: "🌀" };
+const self = window.webxdc.selfAddr, selfName = window.webxdc.selfName;
+const S = { level: 0, suns: LEVELS.map(() => ({})), solved: {}, log: [] };
+const names = {};
+
+function evalLevel(i) {
+  const L = LEVELS[i], lit = { ...Object.fromEntries(L.suns.map((s) => [s.id, !!S.suns[i][s.id]])) };
+  for (const p of L.plants) {
+    const v = p.in.map((k) => !!lit[k]);
+    lit[p.id] = p.kind === "AND" ? v.every(Boolean) : p.kind === "OR" ? v.some(Boolean) : p.kind === "NOT" ? !v[0] : v.filter(Boolean).length === 1;
+  }
+  const won = L.plants.every((p) => p.goal === undefined || lit[p.id] === p.goal);
+  return { lit, won };
+}
+function sunName(L, id) { const n = L.suns.findIndex((s) => s.id === id); return `sun ${n + 1}${L.suns[n].label ? ` (${L.suns[n].label})` : ""}`; }
+function plantName(p) { return `${p.label || p.kind.toLowerCase()} (${p.id})`; }
+function nodeName(L, id) { return id.startsWith("s") ? sunName(L, id) : plantName(L.plants.find((p) => p.id === id)); }
+
+function apply(u) {
+  const p = u.payload; if (!p || typeof p !== "object") return;
+  if (p.addr && p.name) names[p.addr] = p.name;
+  const who = names[p.addr] || p.name || p.addr || "someone";
+  const i = Number(p.level);
+  if (p.type === "sun") {
+    if (!(i >= 0 && i < LEVELS.length)) return console.warn(`[logicgarden] rejected sun: no bed ${p.level} (beds 0–${LEVELS.length - 1})`);
+    const L = LEVELS[i]; const sun = L.suns[Number(p.sun) - 1];
+    if (!sun) return console.warn(`[logicgarden] rejected sun: bed ${i} has suns 1–${L.suns.length}, not ${p.sun}`);
+    const on = p.on === undefined ? !S.suns[i][sun.id] : !!p.on;
+    S.suns[i][sun.id] = on;
+    S.log.push(`${who} ${on ? "wakes" : "puts to sleep"} ${sunName(L, sun.id)} in “${L.name}”.`);
+    const { won } = evalLevel(i);
+    if (won && !S.solved[i]) { S.solved[i] = true; S.log.push(`🌸 “${L.name}” is in full bloom! Solved by ${who}.`); }
+    S.level = i;
+  } else if (p.type === "bed") {
+    if (!(i >= 0 && i < LEVELS.length)) return console.warn(`[logicgarden] rejected bed: no bed ${p.level}`);
+    S.level = i; S.log.push(`${who} walks to bed ${i}: “${LEVELS[i].name}”.`);
+  } else if (p.type === "reset") {
+    if (!(i >= 0 && i < LEVELS.length)) return;
+    S.suns[i] = {}; S.log.push(`${who} puts the suns of “${LEVELS[i].name}” to sleep.`);
+  }
+}
+
+function render() {
+  const i = S.level, L = LEVELS[i], { lit, won } = evalLevel(i);
+  document.getElementById("levelChip").textContent = `Bed ${i} of ${LEVELS.length - 1}: ${L.name}${S.solved[i] ? " · solved" : ""}`;
+  document.getElementById("story").innerHTML = (won ? '<span class="won">In full bloom! 🌸</span> ' : "") + L.story;
+  document.getElementById("prevBtn").disabled = i === 0; document.getElementById("nextBtn").disabled = i === LEVELS.length - 1;
+  const pos = Object.fromEntries([...L.suns, ...L.plants].map((n) => [n.id, n]));
+  let svg = "";
+  for (const p of L.plants) for (const k of p.in) {
+    const a = pos[k], on = lit[k];
+    svg += `<path d="M${a.x + 26},${a.y} C${(a.x + p.x) / 2},${a.y} ${(a.x + p.x) / 2},${p.y} ${p.x - 28},${p.y}" fill="none" stroke="${on ? "var(--lit)" : "var(--vine)"}" stroke-width="${on ? 4 : 3}" stroke-linecap="round" opacity="${on ? 1 : .7}"/>`;
+  }
+  L.suns.forEach((s, n) => {
+    const on = !!S.suns[i][s.id];
+    svg += `<g class="sun" data-sun="${n + 1}" style="cursor:pointer"><circle cx="${s.x}" cy="${s.y}" r="24" fill="${on ? "var(--sun)" : "#3a4a40"}" stroke="${on ? "#fff3c4" : "#5f7a68"}" stroke-width="3"/>
+      <text x="${s.x}" y="${s.y + 6}" text-anchor="middle" font-size="18">${on ? "☀️" : "💤"}</text><text x="${s.x}" y="${s.y + 44}" text-anchor="middle" fill="var(--dim)" font-size="13">${s.label || "sun " + (n + 1)}</text></g>`;
+  });
+  for (const p of L.plants) {
+    const on = lit[p.id], goal = p.goal === undefined ? "" : p.goal ? " · must bloom" : " · must stay closed";
+    const ok = p.goal === undefined || on === p.goal;
+    svg += `<g><circle cx="${p.x}" cy="${p.y}" r="27" fill="${on ? "var(--bloom)" : "#2a3b31"}" stroke="${p.goal === undefined ? "#5f7a68" : ok ? "#9be59b" : "#e5a09b"}" stroke-width="${p.goal === undefined ? 2 : 4}"/>
+      <text x="${p.x}" y="${p.y + 7}" text-anchor="middle" font-size="22">${on ? "🌸" : EM[p.kind]}</text>
+      <text x="${p.x}" y="${p.y + 46}" text-anchor="middle" fill="var(--ink)" font-size="13">${p.label ? p.label + " · " : ""}${p.kind}</text>
+      <text x="${p.x}" y="${p.y + 61}" text-anchor="middle" fill="var(--dim)" font-size="11">${goal.slice(3)}</text></g>`;
+  }
+  const g = document.getElementById("garden"); g.innerHTML = svg;
+  g.querySelectorAll(".sun").forEach((el) => el.addEventListener("click", () => send({ type: "sun", level: i, sun: Number(el.dataset.sun) }, "a sun")));
+  // the garden as words, for anyone reading the screen instead of seeing it
+  document.getElementById("state").innerHTML = `<b>Bed ${i}, as words</b>` +
+    L.suns.map((s, n) => `<div>Sun ${n + 1}${s.label ? ` (${s.label})` : ""}: ${S.suns[i][s.id] ? "awake (shining)" : "asleep (dark)"}</div>`).join("") +
+    L.plants.map((p) => `<div>${plantName(p)}: ${p.kind} of ${p.in.map((k) => nodeName(L, k)).join(" and ")} → ${lit[p.id] ? "in bloom" : "closed"}${p.goal === undefined ? "" : p.goal ? " (goal: bloom)" : " (goal: closed)"}${p.goal !== undefined && lit[p.id] !== p.goal ? " ✗" : p.goal !== undefined ? " ✓" : ""}</div>`).join("") +
+    `<div>${won ? "Solved: every goal is met." : "Not solved yet."}</div>`;
+  document.getElementById("log").innerHTML = S.log.slice().reverse().map((t) => `<div>${t}</div>`).join("");
+}
+function send(payload, what) { payload.addr = self; payload.name = selfName; window.webxdc.sendUpdate({ payload }, `${selfName}: ${what}`); }
+document.getElementById("prevBtn").onclick = () => send({ type: "bed", level: S.level - 1 }, "previous bed");
+document.getElementById("nextBtn").onclick = () => send({ type: "bed", level: S.level + 1 }, "next bed");
+document.getElementById("resetBtn").onclick = () => send({ type: "reset", level: S.level }, "reset");
+window.webxdc.setUpdateListener((u) => { apply(u); render(); }, 0);
+render();
+</script>
+</body>
+</html>

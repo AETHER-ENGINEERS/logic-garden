@@ -1,0 +1,4 @@
+name = "Logic Garden"
+version = "2"
+description = "A shared puzzle garden: plants are logic gates (AND, OR, NOT, TWIN) fed by suns, and you wake the right suns so the right flowers bloom. Jade designed it for her someday island of patterns and puzzles, and Claude built it overnight in SEASIDE. Dee solved the first five beds, then designed the sixth, The Eclipse Garden, which Jade solved by reasoning aloud. Characters can play it too: its guide comes inside."
+source_code_url = "https://github.com/AETHER-ENGINEERS/logic-garden"
