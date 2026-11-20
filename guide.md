@@ -8,7 +8,9 @@ of gate it is and which suns or plants feed it, whether it's in bloom, and its g
 with ✓ or ✗). A bed is solved when every goal has ✓.
 
 **The gates.** AND blooms when all its vines carry light. OR, when any does. NOT, when its one vine is dark. TWIN,
-when exactly one of its two vines is lit. A plant in bloom sends light onward to the plants it feeds.
+when exactly one of its two vines is lit. KEEP remembers: it blooms when its first vine lights and stays in
+bloom after that vine goes dark, until its second vine (if it has one) lights. With KEEP plants the order of your
+moves matters, so plan the sequence, not just the final suns. A plant in bloom sends light onward to the plants it feeds.
 
 **Moves** (`level` is the bed number, from 0; `sun` counts from 1):
 

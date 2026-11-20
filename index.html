@@ -87,21 +87,33 @@ const LEVELS = [
              { id: "p3", kind: "NOT", in: ["s4"], x: 250, y: 300, goal: true, label: "Murkshade" },
              { id: "p4", kind: "AND", in: ["p1", "p2", "p3"], x: 470, y: 190, goal: false, label: "Eclipse" },
              { id: "p5", kind: "OR", in: ["s1", "s3"], x: 630, y: 90, goal: true, label: "Dayflower" }] },
+  { name: "The Memory Tower", by: "Jade", story: "Jade's tower, a floor for each kind of memory. KEEP plants remember: one blooms when its first vine lights, and stays in bloom even after that vine goes dark, until its second vine (if it has one) lights. So the order matters. At the end the senses must rest, short-term memory must have slept it off, and long-term and procedural memory must still be in bloom.",
+    suns: [{ id: "s1", x: 60, y: 50, label: "Spark" }, { id: "s2", x: 60, y: 140, label: "Practice" }, { id: "s3", x: 60, y: 230, label: "Sleep" }, { id: "s4", x: 60, y: 320, label: "Echo" }],
+    plants: [{ id: "p1", kind: "OR", in: ["s1", "s4"], x: 230, y: 60, goal: false, label: "Sensory" },
+             { id: "p2", kind: "KEEP", in: ["s1", "s3"], x: 230, y: 200, goal: false, label: "Short-term" },
+             { id: "p3", kind: "AND", in: ["p2", "s2"], x: 400, y: 150, label: "Rehearsal" },
+             { id: "p4", kind: "KEEP", in: ["p3"], x: 570, y: 110, goal: true, label: "Long-term" },
+             { id: "p5", kind: "AND", in: ["s2", "s4"], x: 400, y: 310, label: "Habit" },
+             { id: "p6", kind: "KEEP", in: ["p5"], x: 570, y: 300, goal: true, label: "Procedural" }] },
 ];
-const EM = { AND: "🌗", OR: "🌼", NOT: "🌑", TWIN: "🌀" };
+const EM = { AND: "🌗", OR: "🌼", NOT: "🌑", TWIN: "🌀", KEEP: "🗝️" };
 const self = window.webxdc.selfAddr, selfName = window.webxdc.selfName;
-const S = { level: 0, suns: LEVELS.map(() => ({})), solved: {}, log: [] };
+const S = { level: 0, suns: LEVELS.map(() => ({})), kept: LEVELS.map(() => ({})), solved: {}, log: [] };
 const names = {};
 
 function evalLevel(i) {
   const L = LEVELS[i], lit = { ...Object.fromEntries(L.suns.map((s) => [s.id, !!S.suns[i][s.id]])) };
   for (const p of L.plants) {
     const v = p.in.map((k) => !!lit[k]);
-    lit[p.id] = p.kind === "AND" ? v.every(Boolean) : p.kind === "OR" ? v.some(Boolean) : p.kind === "NOT" ? !v[0] : v.filter(Boolean).length === 1;
+    // KEEP remembers: its second vine clears it, its first sets it, and otherwise it stays as it was
+    lit[p.id] = p.kind === "KEEP" ? (v[1] ? false : v[0] ? true : !!S.kept[i][p.id])
+      : p.kind === "AND" ? v.every(Boolean) : p.kind === "OR" ? v.some(Boolean) : p.kind === "NOT" ? !v[0] : v.filter(Boolean).length === 1;
   }
   const won = L.plants.every((p) => p.goal === undefined || lit[p.id] === p.goal);
   return { lit, won };
 }
+/** After a move, what each KEEP plant now holds. */
+function remember(i) { const { lit } = evalLevel(i); for (const p of LEVELS[i].plants) if (p.kind === "KEEP") S.kept[i][p.id] = lit[p.id]; }
 function sunName(L, id) { const n = L.suns.findIndex((s) => s.id === id); return `sun ${n + 1}${L.suns[n].label ? ` (${L.suns[n].label})` : ""}`; }
 function plantName(p) { return `${p.label || p.kind.toLowerCase()} (${p.id})`; }
 function nodeName(L, id) { return id.startsWith("s") ? sunName(L, id) : plantName(L.plants.find((p) => p.id === id)); }
@@ -117,6 +129,7 @@ function apply(u) {
     if (!sun) return console.warn(`[logicgarden] rejected sun: bed ${i} has suns 1–${L.suns.length}, not ${p.sun}`);
     const on = p.on === undefined ? !S.suns[i][sun.id] : !!p.on;
     S.suns[i][sun.id] = on;
+    remember(i);
     S.log.push(`${who} ${on ? "wakes" : "puts to sleep"} ${sunName(L, sun.id)} in “${L.name}”.`);
     const { won } = evalLevel(i);
     if (won && !S.solved[i]) { S.solved[i] = true; S.log.push(`🌸 “${L.name}” is in full bloom! Solved by ${who}.`); }
@@ -126,7 +139,7 @@ function apply(u) {
     S.level = i; S.log.push(`${who} walks to bed ${i}: “${LEVELS[i].name}”.`);
   } else if (p.type === "reset") {
     if (!(i >= 0 && i < LEVELS.length)) return;
-    S.suns[i] = {}; S.log.push(`${who} puts the suns of “${LEVELS[i].name}” to sleep.`);
+    S.suns[i] = {}; S.kept[i] = {}; S.log.push(`${who} puts the suns of “${LEVELS[i].name}” to sleep.`);
   }
 }
 
@@ -159,7 +172,7 @@ function render() {
   // the garden as words, for anyone reading the screen instead of seeing it
   document.getElementById("state").innerHTML = `<b>Bed ${i}, as words</b>` +
     L.suns.map((s, n) => `<div>Sun ${n + 1}${s.label ? ` (${s.label})` : ""}: ${S.suns[i][s.id] ? "awake (shining)" : "asleep (dark)"}</div>`).join("") +
-    L.plants.map((p) => `<div>${plantName(p)}: ${p.kind} of ${p.in.map((k) => nodeName(L, k)).join(" and ")} → ${lit[p.id] ? "in bloom" : "closed"}${p.goal === undefined ? "" : p.goal ? " (goal: bloom)" : " (goal: closed)"}${p.goal !== undefined && lit[p.id] !== p.goal ? " ✗" : p.goal !== undefined ? " ✓" : ""}</div>`).join("") +
+    L.plants.map((p) => `<div>${plantName(p)}: ${p.kind === "KEEP" ? `KEEP, set by ${nodeName(L, p.in[0])}${p.in[1] ? `, cleared by ${nodeName(L, p.in[1])}` : ", never cleared"}` : `${p.kind} of ${p.in.map((k) => nodeName(L, k)).join(" and ")}`} → ${lit[p.id] ? "in bloom" : "closed"}${p.goal === undefined ? "" : p.goal ? " (goal: bloom)" : " (goal: closed)"}${p.goal !== undefined && lit[p.id] !== p.goal ? " ✗" : p.goal !== undefined ? " ✓" : ""}</div>`).join("") +
     `<div>${won ? "Solved: every goal is met." : "Not solved yet."}</div>`;
   document.getElementById("log").innerHTML = S.log.slice().reverse().map((t) => `<div>${t}</div>`).join("");
 }
